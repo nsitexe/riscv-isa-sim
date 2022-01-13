@@ -161,8 +161,8 @@ void processor_t::parse_varch_string(const char* s)
     bad_varch_string(s, "vlen must be >= elen");
 
   /* spike requirements. */
-  if (vlen > 4096)
-    bad_varch_string(s, "vlen must be <= 4096");
+  if (vlen > 8192)
+    bad_varch_string(s, "vlen must be <= 8192");
 
   VU.VLEN = vlen;
   VU.ELEN = elen;
