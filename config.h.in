@@ -114,6 +114,12 @@
 /* Enable hardware support for misaligned loads and stores */
 #undef RISCV_ENABLE_MISALIGNED
 
+/* Enable vector mask agnostic overwriting */
+#undef RISCV_ENABLE_VECTOR_MASK_AGNOSTIC_OVERWRITE
+
+/* Enable vector tail agnostic overwriting */
+#undef RISCV_ENABLE_VECTOR_TAIL_AGNOSTIC_OVERWRITE
+
 /* Define if subproject MCPPBS_SPROJ_NORM is enabled */
 #undef SOFTFLOAT_ENABLED
 

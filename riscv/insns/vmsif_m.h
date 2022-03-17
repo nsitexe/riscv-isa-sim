@@ -30,3 +30,4 @@ for (reg_t i = P.VU.vstart->read(); i < vl; ++i) {
     vd = (vd & ~mmask) | ((res << mpos) & mmask);
   }
 }
+VI_MASK_TAIL_AGNOSTIC_OVERWRITE

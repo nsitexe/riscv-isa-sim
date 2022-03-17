@@ -29,6 +29,18 @@
     VI_LOOP_ELEMENT_SKIP(); \
   }
 
+#define VI_LOOP_ACTIVE_ELEMENT_SKIP(BODY) \
+  VI_MASK_VARS \
+  if (insn.v_vm() == 1) { \
+    continue; \
+  } else { \
+    BODY; \
+    bool skip = ((P.VU.elt<uint64_t>(0, midx) >> mpos) & 0x1) == 1; \
+    if (skip) { \
+        continue; \
+    } \
+  }
+
 //
 // vector: operation and register acccess check helper
 //
@@ -209,7 +221,10 @@ static inline bool is_aligned(const unsigned val, const unsigned pos)
   require(P.VU.vsew >= e8 && P.VU.vsew <= e64); \
   require_vector(true); \
   reg_t vl = P.VU.vl->read(); \
+  reg_t vlmax = P.VU.vlmax; \
   reg_t sew = P.VU.vsew; \
+  reg_t vma = P.VU.vma; \
+  reg_t vta = P.VU.vta; \
   reg_t rd_num = insn.rd(); \
   reg_t rs1_num = insn.rs1(); \
   reg_t rs2_num = insn.rs2(); \
@@ -283,7 +298,8 @@ static inline bool is_aligned(const unsigned val, const unsigned pos)
     uint64_t &res = P.VU.elt<uint64_t>(insn.rd(), midx, true); \
     res = (res & ~mmask) | ((op) & (1ULL << mpos)); \
   } \
-  P.VU.vstart->write(0);
+  P.VU.vstart->write(0); \
+  VI_MASK_TAIL_AGNOSTIC_OVERWRITE
 
 #define VI_LOOP_NSHIFT_BASE \
   VI_GENERAL_LOOP_BASE; \
@@ -291,6 +307,42 @@ static inline bool is_aligned(const unsigned val, const unsigned pos)
     require(!(insn.rd() == 0 && P.VU.vflmul > 1)); \
   });
 
+#define VI_AGNOSTIC_PARAM \
+  reg_t vl = P.VU.vl->read(); \
+  reg_t vlmax = P.VU.vlmax; \
+  reg_t sew = P.VU.vsew; \
+  reg_t rd_num = insn.rd();
+
+#define VI_LOOP_MASK_AGNOSTIC_BASE \
+  VI_AGNOSTIC_PARAM \
+  for (reg_t i = P.VU.vstart->read(); i < vl; ++i) { \
+  VI_LOOP_ACTIVE_ELEMENT_SKIP();
+
+#define VI_LOOP_TAIL_AGNOSTIC_BASE \
+  VI_AGNOSTIC_PARAM \
+  reg_t loop_max = (vl == 0) ? 0 : vlmax; \
+  for (reg_t i=vl; i<loop_max; ++i) {
+
+#define VI_LOOP_TAIL_AGNOSTIC_REDUCTION_BASE \
+  VI_AGNOSTIC_PARAM \
+  reg_t loop_max = (vl == 0) ? 0 : vlmax; \
+  for (reg_t i=1; i<loop_max; ++i) {
+
+#define VI_LOOP_SIMPLE_END \
+  }
+
+#define VI_LOOP_MASK_TAIL_AGNOSTIC_BASE \
+  VI_AGNOSTIC_PARAM \
+  reg_t loop_max = (vl == 0) ? 0 : P.VU.VLEN; \
+  for (reg_t i=vl; i<loop_max; ++i) { \
+    VI_MASK_VARS \
+    const uint64_t mmask = UINT64_C(1) << mpos; \
+    uint128_t res = -1; \
+    auto &vd = P.VU.elt<uint64_t>(rd_num, midx, true);
+
+#define VI_LOOP_MASK_TAIL_AGNOSTIC_END \
+    vd = (vd & ~mmask) | (((res) << mpos) & mmask); \
+  }
 
 #define INT_ROUNDING(result, xrm, gb) \
   do { \
@@ -464,9 +516,137 @@ static inline bool is_aligned(const unsigned val, const unsigned pos)
   auto vs2 = P.VU.elt<float##from_width##_t>(rs2_num, i); \
   auto &vd = P.VU.elt<sign##to_width##_t>(rd_num, i, true);
 
+#define VAGN_PARAMS(x) \
+  type_sew_t<x>::type &vd = P.VU.elt<type_sew_t<x>::type>(rd_num, i, true);
+
 //
 // vector: integer and masking operation loop
 //
+
+#ifdef RISCV_ENABLE_VECTOR_MASK_AGNOSTIC_OVERWRITE
+#define VI_MASK_AGNOSTIC_OVERWRITE \
+  { \
+  VI_LOOP_MASK_AGNOSTIC_BASE \
+  if (sew == e8) { \
+    VAGN_PARAMS(e8); \
+    vd = -1; \
+  } else if (sew == e16) { \
+    VAGN_PARAMS(e16); \
+    vd = -1; \
+  } else if (sew == e32) { \
+    VAGN_PARAMS(e32); \
+    vd = -1; \
+  } else if (sew == e64) { \
+    VAGN_PARAMS(e64); \
+    vd = -1; \
+  } \
+  VI_LOOP_SIMPLE_END \
+  }
+
+#define VI_MASK_AGNOSTIC_OVERWRITE_WIDEN \
+  { \
+  VI_LOOP_MASK_AGNOSTIC_BASE \
+  if (sew == e8) { \
+    VAGN_PARAMS(e16); \
+    vd = -1; \
+  } else if (sew == e16) { \
+    VAGN_PARAMS(e32); \
+    vd = -1; \
+  } else if (sew == e32) { \
+    VAGN_PARAMS(e64); \
+    vd = -1; \
+  } \
+  VI_LOOP_SIMPLE_END \
+  }
+
+#else
+#define VI_MASK_AGNOSTIC_OVERWRITE {}
+#define VI_MASK_AGNOSTIC_OVERWRITE_WIDEN {}
+#endif
+
+#ifdef RISCV_ENABLE_VECTOR_TAIL_AGNOSTIC_OVERWRITE
+#define VI_TAIL_AGNOSTIC_OVERWRITE \
+  { \
+  VI_LOOP_TAIL_AGNOSTIC_BASE \
+  if (sew == e8) { \
+    VAGN_PARAMS(e8); \
+    vd = -1; \
+  } else if (sew == e16) { \
+    VAGN_PARAMS(e16); \
+    vd = -1; \
+  } else if (sew == e32) { \
+    VAGN_PARAMS(e32); \
+    vd = -1; \
+  } else if (sew == e64) { \
+    VAGN_PARAMS(e64); \
+    vd = -1; \
+  } \
+  VI_LOOP_SIMPLE_END \
+  }
+
+#define VI_TAIL_AGNOSTIC_OVERWRITE_WIDEN \
+  { \
+  VI_LOOP_TAIL_AGNOSTIC_BASE \
+  if (sew == e8) { \
+    VAGN_PARAMS(e16); \
+    vd = -1; \
+  } else if (sew == e16) { \
+    VAGN_PARAMS(e32); \
+    vd = -1; \
+  } else if (sew == e32) { \
+    VAGN_PARAMS(e64); \
+    vd = -1; \
+  } \
+  VI_LOOP_SIMPLE_END \
+  }
+
+#define VI_TAIL_AGNOSTIC_OVERWRITE_REDUCTION \
+  { \
+  VI_LOOP_TAIL_AGNOSTIC_REDUCTION_BASE \
+  if (sew == e8) { \
+    VAGN_PARAMS(e8); \
+    vd = -1; \
+  } else if (sew == e16) { \
+    VAGN_PARAMS(e16); \
+    vd = -1; \
+  } else if (sew == e32) { \
+    VAGN_PARAMS(e32); \
+    vd = -1; \
+  } else if (sew == e64) { \
+    VAGN_PARAMS(e64); \
+    vd = -1; \
+  } \
+  VI_LOOP_SIMPLE_END \
+  }
+
+#define VI_TAIL_AGNOSTIC_OVERWRITE_WIDE_REDUCTION \
+  { \
+  VI_LOOP_TAIL_AGNOSTIC_REDUCTION_BASE \
+  if (sew == e8) { \
+    VAGN_PARAMS(e16); \
+    vd = -1; \
+  } else if (sew == e16) { \
+    VAGN_PARAMS(e32); \
+    vd = -1; \
+  } else if (sew == e32) { \
+    VAGN_PARAMS(e64); \
+    vd = -1; \
+  } \
+  VI_LOOP_SIMPLE_END \
+  }
+
+#define VI_MASK_TAIL_AGNOSTIC_OVERWRITE \
+  { \
+  VI_LOOP_MASK_TAIL_AGNOSTIC_BASE \
+  VI_LOOP_MASK_TAIL_AGNOSTIC_END \
+  }
+#else
+#define VI_TAIL_AGNOSTIC_OVERWRITE {}
+#define VI_TAIL_AGNOSTIC_OVERWRITE_WIDEN {}
+#define VI_TAIL_AGNOSTIC_OVERWRITE_REDUCTION {}
+#define VI_TAIL_AGNOSTIC_OVERWRITE_WIDE_REDUCTION {}
+#define VI_MASK_TAIL_AGNOSTIC_OVERWRITE {}
+#endif
 
 #define INSNS_BASE(PARAMS, BODY) \
   if (sew == e8) { \
@@ -491,27 +671,33 @@ static inline bool is_aligned(const unsigned val, const unsigned pos)
 
 #define VI_VV_LOOP_CMP(BODY) \
   VI_CHECK_MSS(true); \
-  VI_LOOP_CMP_BODY(VV_CMP_PARAMS, BODY)
+  VI_LOOP_CMP_BODY(VV_CMP_PARAMS, BODY) \
+  VI_MASK_TAIL_AGNOSTIC_OVERWRITE
 
 #define VI_VX_LOOP_CMP(BODY) \
   VI_CHECK_MSS(false); \
-  VI_LOOP_CMP_BODY(VX_CMP_PARAMS, BODY)
+  VI_LOOP_CMP_BODY(VX_CMP_PARAMS, BODY) \
+  VI_MASK_TAIL_AGNOSTIC_OVERWRITE
 
 #define VI_VI_LOOP_CMP(BODY) \
   VI_CHECK_MSS(false); \
-  VI_LOOP_CMP_BODY(VI_CMP_PARAMS, BODY)
+  VI_LOOP_CMP_BODY(VI_CMP_PARAMS, BODY) \
+  VI_MASK_TAIL_AGNOSTIC_OVERWRITE
 
 #define VI_VV_ULOOP_CMP(BODY) \
   VI_CHECK_MSS(true); \
-  VI_LOOP_CMP_BODY(VV_UCMP_PARAMS, BODY)
+  VI_LOOP_CMP_BODY(VV_UCMP_PARAMS, BODY) \
+  VI_MASK_TAIL_AGNOSTIC_OVERWRITE
 
 #define VI_VX_ULOOP_CMP(BODY) \
   VI_CHECK_MSS(false); \
-  VI_LOOP_CMP_BODY(VX_UCMP_PARAMS, BODY)
+  VI_LOOP_CMP_BODY(VX_UCMP_PARAMS, BODY) \
+  VI_MASK_TAIL_AGNOSTIC_OVERWRITE
 
 #define VI_VI_ULOOP_CMP(BODY) \
   VI_CHECK_MSS(false); \
-  VI_LOOP_CMP_BODY(VI_UCMP_PARAMS, BODY)
+  VI_LOOP_CMP_BODY(VI_UCMP_PARAMS, BODY) \
+  VI_MASK_TAIL_AGNOSTIC_OVERWRITE
 
 // merge and copy loop
 #define VI_MERGE_VARS \
@@ -539,7 +725,8 @@ static inline bool is_aligned(const unsigned val, const unsigned pos)
     VV_PARAMS(e64); \
     BODY; \
   } \
-  VI_LOOP_END
+  VI_LOOP_END \
+  if (vta) VI_TAIL_AGNOSTIC_OVERWRITE
 
 #define VI_VX_MERGE_LOOP(BODY) \
   VI_CHECK_SSS(false); \
@@ -557,7 +744,8 @@ static inline bool is_aligned(const unsigned val, const unsigned pos)
     VX_PARAMS(e64); \
     BODY; \
   } \
-  VI_LOOP_END 
+  VI_LOOP_END \
+  if (vta) VI_TAIL_AGNOSTIC_OVERWRITE
 
 #define VI_VI_MERGE_LOOP(BODY) \
   VI_CHECK_SSS(false); \
@@ -575,7 +763,8 @@ static inline bool is_aligned(const unsigned val, const unsigned pos)
     VI_PARAMS(e64); \
     BODY; \
   } \
-  VI_LOOP_END
+  VI_LOOP_END \
+  if (vta) VI_TAIL_AGNOSTIC_OVERWRITE
 
 #define VI_VF_MERGE_LOOP(BODY) \
   VI_CHECK_SSS(false); \
@@ -592,7 +781,8 @@ static inline bool is_aligned(const unsigned val, const unsigned pos)
     VFP_VF_PARAMS(64); \
     BODY; \
   } \
-  VI_LOOP_END
+  VI_LOOP_END \
+  if (vta) VI_TAIL_AGNOSTIC_OVERWRITE
 
 // reduction loop - signed
 #define VI_LOOP_REDUCTION_BASE(x) \
@@ -623,7 +813,9 @@ static inline bool is_aligned(const unsigned val, const unsigned pos)
     REDUCTION_LOOP(e32, BODY) \
   } else if (sew == e64) { \
     REDUCTION_LOOP(e64, BODY) \
-  }
+  } \
+  reg_t vta = P.VU.vta; \
+  if (vta) VI_TAIL_AGNOSTIC_OVERWRITE_REDUCTION
 
 // reduction loop - unsigned
 #define VI_ULOOP_REDUCTION_BASE(x) \
@@ -654,8 +846,9 @@ static inline bool is_aligned(const unsigned val, const unsigned pos)
     REDUCTION_ULOOP(e32, BODY) \
   } else if (sew == e64) { \
     REDUCTION_ULOOP(e64, BODY) \
-  }
-
+  } \
+  reg_t vta = P.VU.vta; \
+  if (vta) VI_TAIL_AGNOSTIC_OVERWRITE_REDUCTION
 
 // genearl VXI signed/unsigned loop
 #define VI_VV_ULOOP(BODY) \
@@ -674,7 +867,9 @@ static inline bool is_aligned(const unsigned val, const unsigned pos)
     VV_U_PARAMS(e64); \
     BODY; \
   } \
-  VI_LOOP_END 
+  VI_LOOP_END \
+  if (vma) VI_MASK_AGNOSTIC_OVERWRITE \
+  if (vta) VI_TAIL_AGNOSTIC_OVERWRITE
 
 #define VI_VV_LOOP(BODY) \
   VI_CHECK_SSS(true) \
@@ -692,7 +887,9 @@ static inline bool is_aligned(const unsigned val, const unsigned pos)
     VV_PARAMS(e64); \
     BODY; \
   } \
-  VI_LOOP_END 
+  VI_LOOP_END \
+  if (vma) VI_MASK_AGNOSTIC_OVERWRITE \
+  if (vta) VI_TAIL_AGNOSTIC_OVERWRITE
 
 #define VI_VX_ULOOP(BODY) \
   VI_CHECK_SSS(false) \
@@ -710,7 +907,9 @@ static inline bool is_aligned(const unsigned val, const unsigned pos)
     VX_U_PARAMS(e64); \
     BODY; \
   } \
-  VI_LOOP_END 
+  VI_LOOP_END \
+  if (vma) VI_MASK_AGNOSTIC_OVERWRITE \
+  if (vta) VI_TAIL_AGNOSTIC_OVERWRITE
 
 #define VI_VX_LOOP(BODY) \
   VI_CHECK_SSS(false) \
@@ -728,7 +927,9 @@ static inline bool is_aligned(const unsigned val, const unsigned pos)
     VX_PARAMS(e64); \
     BODY; \
   } \
-  VI_LOOP_END 
+  VI_LOOP_END \
+  if (vma) VI_MASK_AGNOSTIC_OVERWRITE \
+  if (vta) VI_TAIL_AGNOSTIC_OVERWRITE
 
 #define VI_VI_ULOOP(BODY) \
   VI_CHECK_SSS(false) \
@@ -746,7 +947,9 @@ static inline bool is_aligned(const unsigned val, const unsigned pos)
     VI_U_PARAMS(e64); \
     BODY; \
   } \
-  VI_LOOP_END 
+  VI_LOOP_END \
+  if (vma) VI_MASK_AGNOSTIC_OVERWRITE \
+  if (vta) VI_TAIL_AGNOSTIC_OVERWRITE
 
 #define VI_VI_LOOP(BODY) \
   VI_CHECK_SSS(false) \
@@ -764,7 +967,9 @@ static inline bool is_aligned(const unsigned val, const unsigned pos)
     VI_PARAMS(e64); \
     BODY; \
   } \
-  VI_LOOP_END 
+  VI_LOOP_END \
+  if (vma) VI_MASK_AGNOSTIC_OVERWRITE \
+  if (vta) VI_TAIL_AGNOSTIC_OVERWRITE
 
 // signed unsigned operation loop (e.g. mulhsu)
 #define VI_VV_SU_LOOP(BODY) \
@@ -783,7 +988,9 @@ static inline bool is_aligned(const unsigned val, const unsigned pos)
     VV_SU_PARAMS(e64); \
     BODY; \
   } \
-  VI_LOOP_END 
+  VI_LOOP_END \
+  if (vma) VI_MASK_AGNOSTIC_OVERWRITE \
+  if (vta) VI_TAIL_AGNOSTIC_OVERWRITE
 
 #define VI_VX_SU_LOOP(BODY) \
   VI_CHECK_SSS(false) \
@@ -801,7 +1008,9 @@ static inline bool is_aligned(const unsigned val, const unsigned pos)
     VX_SU_PARAMS(e64); \
     BODY; \
   } \
-  VI_LOOP_END 
+  VI_LOOP_END \
+  if (vma) VI_MASK_AGNOSTIC_OVERWRITE \
+  if (vta) VI_TAIL_AGNOSTIC_OVERWRITE
 
 // narrow operation loop
 #define VI_VV_LOOP_NARROW(BODY) \
@@ -817,7 +1026,9 @@ static inline bool is_aligned(const unsigned val, const unsigned pos)
     VV_NARROW_PARAMS(e32, e64) \
     BODY; \
   } \
-  VI_LOOP_END
+  VI_LOOP_END \
+  if (vma) VI_MASK_AGNOSTIC_OVERWRITE \
+  if (vta) VI_TAIL_AGNOSTIC_OVERWRITE
 
 #define VI_VX_LOOP_NARROW(BODY) \
   VI_CHECK_SDS(false); \
@@ -832,7 +1043,9 @@ static inline bool is_aligned(const unsigned val, const unsigned pos)
     VX_NARROW_PARAMS(e32, e64) \
     BODY; \
   } \
-  VI_LOOP_END
+  VI_LOOP_END \
+  if (vma) VI_MASK_AGNOSTIC_OVERWRITE \
+  if (vta) VI_TAIL_AGNOSTIC_OVERWRITE
 
 #define VI_VI_LOOP_NARROW(BODY) \
   VI_CHECK_SDS(false); \
@@ -847,7 +1060,9 @@ static inline bool is_aligned(const unsigned val, const unsigned pos)
     VI_NARROW_PARAMS(e32, e64) \
     BODY; \
   } \
-  VI_LOOP_END
+  VI_LOOP_END \
+  if (vma) VI_MASK_AGNOSTIC_OVERWRITE \
+  if (vta) VI_TAIL_AGNOSTIC_OVERWRITE
 
 #define VI_VI_LOOP_NSHIFT(BODY) \
   VI_CHECK_SDS(false); \
@@ -862,7 +1077,9 @@ static inline bool is_aligned(const unsigned val, const unsigned pos)
     VI_NARROW_PARAMS(e32, e64) \
     BODY; \
   } \
-  VI_LOOP_END
+  VI_LOOP_END \
+  if (vma) VI_MASK_AGNOSTIC_OVERWRITE \
+  if (vta) VI_TAIL_AGNOSTIC_OVERWRITE
 
 #define VI_VX_LOOP_NSHIFT(BODY) \
   VI_CHECK_SDS(false); \
@@ -877,7 +1094,9 @@ static inline bool is_aligned(const unsigned val, const unsigned pos)
     VX_NARROW_PARAMS(e32, e64) \
     BODY; \
   } \
-  VI_LOOP_END
+  VI_LOOP_END \
+  if (vma) VI_MASK_AGNOSTIC_OVERWRITE \
+  if (vta) VI_TAIL_AGNOSTIC_OVERWRITE
 
 #define VI_VV_LOOP_NSHIFT(BODY) \
   VI_CHECK_SDS(true); \
@@ -892,7 +1111,9 @@ static inline bool is_aligned(const unsigned val, const unsigned pos)
     VV_NARROW_PARAMS(e32, e64) \
     BODY; \
   } \
-  VI_LOOP_END
+  VI_LOOP_END \
+  if (vma) VI_MASK_AGNOSTIC_OVERWRITE \
+  if (vta) VI_TAIL_AGNOSTIC_OVERWRITE
 
 // widen operation loop
 #define VI_VV_LOOP_WIDEN(BODY) \
@@ -907,7 +1128,9 @@ static inline bool is_aligned(const unsigned val, const unsigned pos)
     VV_PARAMS(e32); \
     BODY; \
   } \
-  VI_LOOP_END
+  VI_LOOP_END \
+  if (vma) VI_MASK_AGNOSTIC_OVERWRITE_WIDEN \
+  if (vta) VI_TAIL_AGNOSTIC_OVERWRITE_WIDEN
 
 #define VI_VX_LOOP_WIDEN(BODY) \
   VI_LOOP_BASE \
@@ -921,7 +1144,9 @@ static inline bool is_aligned(const unsigned val, const unsigned pos)
     VX_PARAMS(e32); \
     BODY; \
   } \
-  VI_LOOP_END
+  VI_LOOP_END \
+  if (vma) VI_MASK_AGNOSTIC_OVERWRITE_WIDEN \
+  if (vta) VI_TAIL_AGNOSTIC_OVERWRITE_WIDEN
 
 #define VI_WIDE_OP_AND_ASSIGN(var0, var1, var2, op0, op1, sign) \
   switch (P.VU.vsew) { \
@@ -1015,7 +1240,9 @@ static inline bool is_aligned(const unsigned val, const unsigned pos)
     WIDE_REDUCTION_LOOP(e16, e32, BODY) \
   } else if (sew == e32) { \
     WIDE_REDUCTION_LOOP(e32, e64, BODY) \
-  }
+  } \
+  reg_t vta = P.VU.vta; \
+  if (vta) VI_TAIL_AGNOSTIC_OVERWRITE_WIDE_REDUCTION
 
 // wide reduction loop - unsigned
 #define VI_ULOOP_WIDE_REDUCTION_BASE(sew1, sew2) \
@@ -1043,7 +1270,9 @@ static inline bool is_aligned(const unsigned val, const unsigned pos)
     WIDE_REDUCTION_ULOOP(e16, e32, BODY) \
   } else if (sew == e32) { \
     WIDE_REDUCTION_ULOOP(e32, e64, BODY) \
-  }
+  } \
+  reg_t vta = P.VU.vta; \
+  if (vta) VI_TAIL_AGNOSTIC_OVERWRITE_WIDE_REDUCTION
 
 // carry/borrow bit loop
 #define VI_VV_LOOP_CARRY(BODY) \
@@ -1062,7 +1291,8 @@ static inline bool is_aligned(const unsigned val, const unsigned pos)
       VV_CARRY_PARAMS(e64) \
       BODY; \
     } \
-  VI_LOOP_CARRY_END
+  VI_LOOP_CARRY_END \
+  VI_MASK_TAIL_AGNOSTIC_OVERWRITE
 
 #define VI_XI_LOOP_CARRY(BODY) \
   VI_CHECK_MSS(false); \
@@ -1080,7 +1310,8 @@ static inline bool is_aligned(const unsigned val, const unsigned pos)
       XI_CARRY_PARAMS(e64) \
       BODY; \
     } \
-  VI_LOOP_CARRY_END
+  VI_LOOP_CARRY_END \
+  VI_MASK_TAIL_AGNOSTIC_OVERWRITE
 
 #define VI_VV_LOOP_WITH_CARRY(BODY) \
   require_vm; \
@@ -1099,7 +1330,8 @@ static inline bool is_aligned(const unsigned val, const unsigned pos)
       VV_WITH_CARRY_PARAMS(e64) \
       BODY; \
     } \
-  VI_LOOP_END
+  VI_LOOP_END \
+  if (vta) VI_TAIL_AGNOSTIC_OVERWRITE
 
 #define VI_XI_LOOP_WITH_CARRY(BODY) \
   require_vm; \
@@ -1118,7 +1350,8 @@ static inline bool is_aligned(const unsigned val, const unsigned pos)
       XI_WITH_CARRY_PARAMS(e64) \
       BODY; \
     } \
-  VI_LOOP_END
+  VI_LOOP_END \
+  if (vta) VI_TAIL_AGNOSTIC_OVERWRITE
 
 // average loop
 #define VI_VV_LOOP_AVG(op) \
@@ -1178,6 +1411,38 @@ reg_t index[P.VU.vlmax]; \
   } \
 }
 
+#ifdef RISCV_ENABLE_VECTOR_MASK_AGNOSTIC_OVERWRITE
+#define VI_LD_MASK_AGNOSTIC_OVERWRITE(elt_width) \
+  { \
+  VI_AGNOSTIC_PARAM \
+  for (reg_t i=0; i < vl; ++i) { \
+    VI_LOOP_ACTIVE_ELEMENT_SKIP(); \
+    VI_STRIP(i); \
+    for (reg_t fn = 0; fn < nf; ++fn) { \
+      P.VU.elt<elt_width##_t>(vd + fn * emul, vreg_inx, true) = -1; \
+    } \
+  } \
+  }
+#else
+#define VI_LD_MASK_AGNOSTIC_OVERWRITE(elt_width) {}
+#endif
+
+#ifdef RISCV_ENABLE_VECTOR_TAIL_AGNOSTIC_OVERWRITE
+#define VI_LD_TAIL_AGNOSTIC_OVERWRITE(elt_width) \
+  { \
+  VI_AGNOSTIC_PARAM \
+  reg_t loop_max = (vl == 0) ? 0 : vlmax; \
+  for (reg_t i=vl; i<loop_max; ++i) { \
+    VI_STRIP(i); \
+    for (reg_t fn = 0; fn < nf; ++fn) { \
+      P.VU.elt<elt_width##_t>(vd + fn * emul, vreg_inx, true) = -1; \
+    } \
+  } \
+  }
+#else
+#define VI_LD_TAIL_AGNOSTIC_OVERWRITE(elt_width) {}
+#endif
+
 #define VI_LD(stride, offset, elt_width, is_mask_ldst) \
   const reg_t nf = insn.v_nf() + 1; \
   const reg_t vl = is_mask_ldst ? ((P.VU.vl->read() + 7) / 8) : P.VU.vl->read(); \
@@ -1194,7 +1459,69 @@ reg_t index[P.VU.vlmax]; \
       P.VU.elt<elt_width##_t>(vd + fn * emul, vreg_inx, true) = val; \
     } \
   } \
-  P.VU.vstart->write(0);
+  P.VU.vstart->write(0); \
+  reg_t vma = P.VU.vma; \
+  reg_t vta = P.VU.vta; \
+  if (vma) VI_LD_MASK_AGNOSTIC_OVERWRITE(elt_width) \
+  if (is_mask_ldst || vta) VI_LD_TAIL_AGNOSTIC_OVERWRITE(elt_width)
+
+#ifdef RISCV_ENABLE_VECTOR_MASK_AGNOSTIC_OVERWRITE
+#define VI_LD_INDEX_MASK_AGNOSTIC_OVERWRITE(elt_width) \
+  { \
+  VI_AGNOSTIC_PARAM \
+  for (reg_t i=0; i < vl; ++i) { \
+    VI_LOOP_ACTIVE_ELEMENT_SKIP(); \
+    VI_STRIP(i); \
+    for (reg_t fn = 0; fn < nf; ++fn) { \
+      switch (P.VU.vsew) { \
+        case e8: \
+          P.VU.elt<uint8_t>(vd + fn * flmul, vreg_inx, true) = -1; \
+          break; \
+        case e16: \
+          P.VU.elt<uint16_t>(vd + fn * flmul, vreg_inx, true) = -1; \
+          break; \
+        case e32: \
+          P.VU.elt<uint32_t>(vd + fn * flmul, vreg_inx, true) = -1; \
+          break; \
+        default: \
+          P.VU.elt<uint64_t>(vd + fn * flmul, vreg_inx, true) = -1; \
+          break; \
+      } \
+    } \
+  } \
+  }
+#else
+#define VI_LD_INDEX_MASK_AGNOSTIC_OVERWRITE(elt_width) {}
+#endif
+
+#ifdef RISCV_ENABLE_VECTOR_TAIL_AGNOSTIC_OVERWRITE
+#define VI_LD_INDEX_TAIL_AGNOSTIC_OVERWRITE(elt_width) \
+  { \
+  VI_AGNOSTIC_PARAM \
+  reg_t loop_max = (vl == 0) ? 0 : vlmax; \
+  for (reg_t i=vl; i<loop_max; ++i) { \
+    VI_STRIP(i); \
+    for (reg_t fn = 0; fn < nf; ++fn) { \
+      switch (P.VU.vsew) { \
+        case e8: \
+          P.VU.elt<uint8_t>(vd + fn * flmul, vreg_inx, true) = -1; \
+          break; \
+        case e16: \
+          P.VU.elt<uint16_t>(vd + fn * flmul, vreg_inx, true) = -1; \
+          break; \
+        case e32: \
+          P.VU.elt<uint32_t>(vd + fn * flmul, vreg_inx, true) = -1; \
+          break; \
+        default: \
+          P.VU.elt<uint64_t>(vd + fn * flmul, vreg_inx, true) = -1; \
+          break; \
+      } \
+    } \
+  } \
+  }
+#else
+#define VI_LD_INDEX_TAIL_AGNOSTIC_OVERWRITE(elt_width) {}
+#endif
 
 #define VI_LD_INDEX(elt_width, is_seg) \
   const reg_t nf = insn.v_nf() + 1; \
@@ -1230,7 +1557,11 @@ reg_t index[P.VU.vlmax]; \
       } \
     } \
   } \
-  P.VU.vstart->write(0);
+  P.VU.vstart->write(0); \
+  reg_t vma = P.VU.vma; \
+  reg_t vta = P.VU.vta; \
+  if (vma) VI_LD_INDEX_MASK_AGNOSTIC_OVERWRITE(elt_width) \
+  if (vta) VI_LD_INDEX_TAIL_AGNOSTIC_OVERWRITE(elt_width)
 
 #define VI_ST(stride, offset, elt_width, is_mask_ldst) \
   const reg_t nf = insn.v_nf() + 1; \
@@ -1286,6 +1617,38 @@ reg_t index[P.VU.vlmax]; \
   } \
   P.VU.vstart->write(0);
 
+#ifdef RISCV_ENABLE_VECTOR_MASK_AGNOSTIC_OVERWRITE
+#define VI_LD_FF_MASK_AGNOSTIC_OVERWRITE(elt_width) \
+  { \
+  VI_AGNOSTIC_PARAM \
+  for (reg_t i=0; i < vl; ++i) { \
+    VI_LOOP_ACTIVE_ELEMENT_SKIP(); \
+    VI_STRIP(i); \
+    for (reg_t fn = 0; fn < nf; ++fn) { \
+      P.VU.elt<elt_width##_t>(rd_num + fn * emul, vreg_inx, true) = -1; \
+    } \
+  } \
+  }
+#else
+#define VI_LD_FF_MASK_AGNOSTIC_OVERWRITE(elt_width) {}
+#endif
+
+#ifdef RISCV_ENABLE_VECTOR_TAIL_AGNOSTIC_OVERWRITE
+#define VI_LD_FF_TAIL_AGNOSTIC_OVERWRITE(elt_width) \
+  { \
+  VI_AGNOSTIC_PARAM \
+  reg_t loop_max = (vl == 0) ? 0 : vlmax; \
+  for (reg_t i=vl; i<loop_max; ++i) { \
+    VI_STRIP(i); \
+    for (reg_t fn = 0; fn < nf; ++fn) { \
+      P.VU.elt<elt_width##_t>(rd_num + fn * emul, vreg_inx, true) = -1; \
+    } \
+  } \
+  }
+#else
+#define VI_LD_FF_TAIL_AGNOSTIC_OVERWRITE(elt_width) {}
+#endif
+
 #define VI_LDST_FF(elt_width) \
   const reg_t nf = insn.v_nf() + 1; \
   const reg_t sew = p->VU.vsew; \
@@ -1318,7 +1681,11 @@ reg_t index[P.VU.vlmax]; \
       break; \
     } \
   } \
-  p->VU.vstart->write(0);
+  p->VU.vstart->write(0); \
+  reg_t vma = P.VU.vma; \
+  reg_t vta = P.VU.vta; \
+  if (vma) VI_LD_FF_MASK_AGNOSTIC_OVERWRITE(elt_width) \
+  if (vta && !early_stop) VI_LD_FF_TAIL_AGNOSTIC_OVERWRITE(elt_width)
 
 #define VI_LD_WHOLE(elt_width) \
   require_vector_novtype(true, false); \
@@ -1436,6 +1803,76 @@ reg_t index[P.VU.vlmax]; \
   P.VU.vstart->write(0);
 
 // vector: sign/unsiged extension
+#ifdef RISCV_ENABLE_VECTOR_MASK_AGNOSTIC_OVERWRITE
+#define VI_VV_EXT_MASK_AGNOSTIC_OVERWRITE(type) \
+  { \
+  VI_LOOP_MASK_AGNOSTIC_BASE \
+  switch (pat) { \
+    case 0x21: \
+      P.VU.elt<type##16_t>(rd_num, i, true) = -1; \
+      break; \
+    case 0x41: \
+      P.VU.elt<type##32_t>(rd_num, i, true) = -1; \
+      break; \
+    case 0x81: \
+      P.VU.elt<type##64_t>(rd_num, i, true) = -1; \
+      break; \
+    case 0x42: \
+      P.VU.elt<type##32_t>(rd_num, i, true) = -1; \
+      break; \
+    case 0x82: \
+      P.VU.elt<type##64_t>(rd_num, i, true) = -1; \
+      break; \
+    case 0x84: \
+      P.VU.elt<type##64_t>(rd_num, i, true) = -1; \
+      break; \
+    case 0x88: \
+      P.VU.elt<type##64_t>(rd_num, i, true) = -1; \
+      break; \
+    default: \
+      break; \
+  } \
+  VI_LOOP_SIMPLE_END \
+  }
+#else
+#define VI_VV_EXT_MASK_AGNOSTIC_OVERWRITE(type) {}
+#endif
+
+#ifdef RISCV_ENABLE_VECTOR_TAIL_AGNOSTIC_OVERWRITE
+#define VI_VV_EXT_TAIL_AGNOSTIC_OVERWRITE(type) \
+  { \
+  VI_LOOP_TAIL_AGNOSTIC_BASE \
+  switch (pat) { \
+    case 0x21: \
+      P.VU.elt<type##16_t>(rd_num, i, true) = -1; \
+      break; \
+    case 0x41: \
+      P.VU.elt<type##32_t>(rd_num, i, true) = -1; \
+      break; \
+    case 0x81: \
+      P.VU.elt<type##64_t>(rd_num, i, true) = -1; \
+      break; \
+    case 0x42: \
+      P.VU.elt<type##32_t>(rd_num, i, true) = -1; \
+      break; \
+    case 0x82: \
+      P.VU.elt<type##64_t>(rd_num, i, true) = -1; \
+      break; \
+    case 0x84: \
+      P.VU.elt<type##64_t>(rd_num, i, true) = -1; \
+      break; \
+    case 0x88: \
+      P.VU.elt<type##64_t>(rd_num, i, true) = -1; \
+      break; \
+    default: \
+      break; \
+  } \
+  VI_LOOP_SIMPLE_END \
+  }
+#else
+#define VI_VV_EXT_TAIL_AGNOSTIC_OVERWRITE(type) {}
+#endif
+
 #define VI_VV_EXT(div, type) \
   require(insn.rd() != insn.rs2()); \
   require_vm; \
@@ -1477,7 +1914,9 @@ reg_t index[P.VU.vlmax]; \
       default: \
         break; \
     } \
-  VI_LOOP_END 
+  VI_LOOP_END \
+  if (vma) VI_VV_EXT_MASK_AGNOSTIC_OVERWRITE(type) \
+  if (vta) VI_VV_EXT_TAIL_AGNOSTIC_OVERWRITE(type)
 
 //
 // vector: vfp helper
@@ -1490,6 +1929,10 @@ reg_t index[P.VU.vlmax]; \
   require_vector(true); \
   require(STATE.frm->read() < 0x5); \
   reg_t vl = P.VU.vl->read(); \
+  reg_t vlmax = P.VU.vlmax; \
+  reg_t sew = P.VU.vsew; \
+  reg_t vma = P.VU.vma; \
+  reg_t vta = P.VU.vta; \
   reg_t rd_num = insn.rd(); \
   reg_t rs1_num = insn.rs1(); \
   reg_t rs2_num = insn.rs2(); \
@@ -1621,7 +2064,9 @@ reg_t index[P.VU.vlmax]; \
       break; \
   }; \
   DEBUG_RVV_FP_VV; \
-  VI_VFP_LOOP_END
+  VI_VFP_LOOP_END \
+  if (vma) VI_MASK_AGNOSTIC_OVERWRITE \
+  if (vta) VI_TAIL_AGNOSTIC_OVERWRITE
 
 #define VI_VFP_V_LOOP(BODY16, BODY32, BODY64) \
   VI_CHECK_SSS(false); \
@@ -1647,7 +2092,9 @@ reg_t index[P.VU.vlmax]; \
       break; \
   }; \
   set_fp_exceptions; \
-  VI_VFP_LOOP_END
+  VI_VFP_LOOP_END \
+  if (vma) VI_MASK_AGNOSTIC_OVERWRITE \
+  if (vta) VI_TAIL_AGNOSTIC_OVERWRITE
 
 #define VI_VFP_VV_LOOP_REDUCTION(BODY16, BODY32, BODY64) \
   VI_CHECK_REDUCTION(false) \
@@ -1678,6 +2125,7 @@ reg_t index[P.VU.vlmax]; \
       require(0); \
       break; \
   }; \
+  if (vta) VI_TAIL_AGNOSTIC_OVERWRITE_REDUCTION
 
 #define VI_VFP_VV_LOOP_WIDE_REDUCTION(BODY16, BODY32) \
   VI_CHECK_REDUCTION(true) \
@@ -1712,6 +2160,7 @@ reg_t index[P.VU.vlmax]; \
       require(0); \
       break; \
   }; \
+  if (vta) VI_TAIL_AGNOSTIC_OVERWRITE_WIDE_REDUCTION
 
 #define VI_VFP_VF_LOOP(BODY16, BODY32, BODY64) \
   VI_CHECK_SSS(false); \
@@ -1740,7 +2189,9 @@ reg_t index[P.VU.vlmax]; \
       break; \
   }; \
   DEBUG_RVV_FP_VF; \
-  VI_VFP_LOOP_END
+  VI_VFP_LOOP_END \
+  if (vma) VI_MASK_AGNOSTIC_OVERWRITE \
+  if (vta) VI_TAIL_AGNOSTIC_OVERWRITE
 
 #define VI_VFP_VV_LOOP_CMP(BODY16, BODY32, BODY64) \
   VI_CHECK_MSS(true); \
@@ -1769,6 +2220,7 @@ reg_t index[P.VU.vlmax]; \
       break; \
   }; \
   VI_VFP_LOOP_CMP_END \
+  VI_MASK_TAIL_AGNOSTIC_OVERWRITE
 
 #define VI_VFP_VF_LOOP_CMP(BODY16, BODY32, BODY64) \
   VI_CHECK_MSS(false); \
@@ -1797,6 +2249,7 @@ reg_t index[P.VU.vlmax]; \
       break; \
   }; \
   VI_VFP_LOOP_CMP_END \
+  VI_MASK_TAIL_AGNOSTIC_OVERWRITE
 
 #define VI_VFP_VF_LOOP_WIDE(BODY16, BODY32) \
   VI_CHECK_DSS(false); \
@@ -1823,8 +2276,9 @@ reg_t index[P.VU.vlmax]; \
       break; \
   }; \
   DEBUG_RVV_FP_VV; \
-  VI_VFP_LOOP_END
-
+  VI_VFP_LOOP_END \
+  if (vma) VI_MASK_AGNOSTIC_OVERWRITE_WIDEN \
+  if (vta) VI_TAIL_AGNOSTIC_OVERWRITE_WIDEN
 
 #define VI_VFP_VV_LOOP_WIDE(BODY16, BODY32) \
   VI_CHECK_DSS(true); \
@@ -1851,7 +2305,9 @@ reg_t index[P.VU.vlmax]; \
       break; \
   }; \
   DEBUG_RVV_FP_VV; \
-  VI_VFP_LOOP_END
+  VI_VFP_LOOP_END \
+  if (vma) VI_MASK_AGNOSTIC_OVERWRITE_WIDEN \
+  if (vta) VI_TAIL_AGNOSTIC_OVERWRITE_WIDEN
 
 #define VI_VFP_WF_LOOP_WIDE(BODY16, BODY32) \
   VI_CHECK_DDS(false); \
@@ -1877,7 +2333,9 @@ reg_t index[P.VU.vlmax]; \
       require(0); \
   }; \
   DEBUG_RVV_FP_VV; \
-  VI_VFP_LOOP_END
+  VI_VFP_LOOP_END \
+  if (vma) VI_MASK_AGNOSTIC_OVERWRITE_WIDEN \
+  if (vta) VI_TAIL_AGNOSTIC_OVERWRITE_WIDEN
 
 #define VI_VFP_WV_LOOP_WIDE(BODY16, BODY32) \
   VI_CHECK_DDS(true); \
@@ -1903,7 +2361,9 @@ reg_t index[P.VU.vlmax]; \
       require(0); \
   }; \
   DEBUG_RVV_FP_VV; \
-  VI_VFP_LOOP_END
+  VI_VFP_LOOP_END \
+  if (vma) VI_MASK_AGNOSTIC_OVERWRITE_WIDEN \
+  if (vta) VI_TAIL_AGNOSTIC_OVERWRITE_WIDEN
 
 #define VI_VFP_LOOP_SCALE_BASE \
   require_fp; \
@@ -1947,7 +2407,9 @@ reg_t index[P.VU.vlmax]; \
     default: \
       require(0); \
       break; \
-  }
+  } \
+  if (vma) VI_MASK_AGNOSTIC_OVERWRITE \
+  if (vta) VI_TAIL_AGNOSTIC_OVERWRITE
 
 #define VI_VFP_CVT_FP_TO_INT(BODY16, BODY32, BODY64, sign) \
   VI_CHECK_SSS(false); \
@@ -1971,7 +2433,9 @@ reg_t index[P.VU.vlmax]; \
     default: \
       require(0); \
       break; \
-  }
+  } \
+  if (vma) VI_MASK_AGNOSTIC_OVERWRITE \
+  if (vta) VI_TAIL_AGNOSTIC_OVERWRITE
 
 #define VI_VFP_WCVT_FP_TO_FP(BODY8, BODY16, BODY32, \
                              CHECK8, CHECK16, CHECK32) \
@@ -1986,7 +2450,11 @@ reg_t index[P.VU.vlmax]; \
     default: \
       require(0); \
       break; \
-  }
+  } \
+  reg_t vma = P.VU.vma; \
+  reg_t vta = P.VU.vta; \
+  if (vma) VI_MASK_AGNOSTIC_OVERWRITE_WIDEN \
+  if (vta) VI_TAIL_AGNOSTIC_OVERWRITE_WIDEN
 
 #define VI_VFP_WCVT_INT_TO_FP(BODY8, BODY16, BODY32, \
                               CHECK8, CHECK16, CHECK32, \
@@ -2005,7 +2473,11 @@ reg_t index[P.VU.vlmax]; \
     default: \
       require(0); \
       break; \
-  }
+  } \
+  reg_t vma = P.VU.vma; \
+  reg_t vta = P.VU.vta; \
+  if (vma) VI_MASK_AGNOSTIC_OVERWRITE_WIDEN \
+  if (vta) VI_TAIL_AGNOSTIC_OVERWRITE_WIDEN
 
 #define VI_VFP_WCVT_FP_TO_INT(BODY8, BODY16, BODY32, \
                               CHECK8, CHECK16, CHECK32, \
@@ -2021,7 +2493,11 @@ reg_t index[P.VU.vlmax]; \
     default: \
       require(0); \
       break; \
-  }
+  } \
+  reg_t vma = P.VU.vma; \
+  reg_t vta = P.VU.vta; \
+  if (vma) VI_MASK_AGNOSTIC_OVERWRITE_WIDEN \
+  if (vta) VI_TAIL_AGNOSTIC_OVERWRITE_WIDEN
 
 #define VI_VFP_NCVT_FP_TO_FP(BODY8, BODY16, BODY32, \
                              CHECK8, CHECK16, CHECK32) \
@@ -2036,7 +2512,11 @@ reg_t index[P.VU.vlmax]; \
     default: \
       require(0); \
       break; \
-  }
+  } \
+  reg_t vma = P.VU.vma; \
+  reg_t vta = P.VU.vta; \
+  if (vma) VI_MASK_AGNOSTIC_OVERWRITE \
+  if (vta) VI_TAIL_AGNOSTIC_OVERWRITE
 
 #define VI_VFP_NCVT_INT_TO_FP(BODY8, BODY16, BODY32, \
                               CHECK8, CHECK16, CHECK32, \
@@ -2052,7 +2532,11 @@ reg_t index[P.VU.vlmax]; \
     default: \
       require(0); \
       break; \
-  }
+  } \
+  reg_t vma = P.VU.vma; \
+  reg_t vta = P.VU.vta; \
+  if (vma) VI_MASK_AGNOSTIC_OVERWRITE \
+  if (vta) VI_TAIL_AGNOSTIC_OVERWRITE
 
 #define VI_VFP_NCVT_FP_TO_INT(BODY8, BODY16, BODY32, \
                               CHECK8, CHECK16, CHECK32, \
@@ -2071,6 +2555,10 @@ reg_t index[P.VU.vlmax]; \
     default: \
       require(0); \
       break; \
-  }
+  } \
+  reg_t vma = P.VU.vma; \
+  reg_t vta = P.VU.vta; \
+  if (vma) VI_MASK_AGNOSTIC_OVERWRITE \
+  if (vta) VI_TAIL_AGNOSTIC_OVERWRITE
 
 #endif
