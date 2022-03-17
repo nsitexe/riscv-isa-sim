@@ -25,5 +25,7 @@ if (vl > 0 && P.VU.vstart->read() < vl) {
         P.VU.elt<uint64_t>(rd_num, 0, true) = f32(FRS1).v;
       break;
   }
+  reg_t vta = P.VU.vta;
+  if (vta) VI_TAIL_AGNOSTIC_OVERWRITE_REDUCTION
 }
 P.VU.vstart->write(0);

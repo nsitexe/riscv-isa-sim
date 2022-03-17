@@ -29,3 +29,5 @@ default: {
 break;
 }
 VI_LOOP_END
+if (vma) VI_MASK_AGNOSTIC_OVERWRITE
+if (vta) VI_TAIL_AGNOSTIC_OVERWRITE

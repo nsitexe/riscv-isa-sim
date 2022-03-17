@@ -27,4 +27,6 @@ default: {
 }
 P_SET_OV(sat);
 
-VI_LOOP_END
+VI_LOOP_END \
+if (vma) VI_MASK_AGNOSTIC_OVERWRITE \
+if (vta) VI_TAIL_AGNOSTIC_OVERWRITE

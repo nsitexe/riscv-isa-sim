@@ -720,6 +720,8 @@ enable_histogram
 enable_dirty
 enable_misaligned
 enable_dual_endian
+enable_vector_mask_agnostic_overwrite
+enable_vector_tail_agnostic_overwrite
 '
       ac_precious_vars='build_alias
 host_alias
@@ -1370,6 +1372,10 @@ Optional Features:
                           stores
   --enable-dual-endian    Enable support for running target in either
                           endianness
+  --enable-vector-mask-agnostic-overwrite
+                          Enable vector mask agnostic overwriting
+  --enable-vector-tail-agnostic-overwrite
+                          Enable vector tail agnostic overwriting
 
 Optional Packages:
   --with-PACKAGE[=ARG]    use PACKAGE [ARG=yes]
@@ -6115,6 +6121,32 @@ if test "x$enable_dual_endian" = "xyes"; then :
 
 
 $as_echo "#define RISCV_ENABLE_DUAL_ENDIAN /**/" >>confdefs.h
+
+
+fi
+
+# Check whether --enable-vector-mask-agnostic-overwrite was given.
+if test "${enable_vector_mask_agnostic_overwrite+set}" = set; then :
+  enableval=$enable_vector_mask_agnostic_overwrite;
+fi
+
+if test "x$enable_vector_mask_agnostic_overwrite" = "xyes"; then :
+
+
+$as_echo "#define RISCV_ENABLE_VECTOR_MASK_AGNOSTIC_OVERWRITE /**/" >>confdefs.h
+
+
+fi
+
+# Check whether --enable-vector-tail-agnostic-overwrite was given.
+if test "${enable_vector_tail_agnostic_overwrite+set}" = set; then :
+  enableval=$enable_vector_tail_agnostic_overwrite;
+fi
+
+if test "x$enable_vector_tail_agnostic_overwrite" = "xyes"; then :
+
+
+$as_echo "#define RISCV_ENABLE_VECTOR_TAIL_AGNOSTIC_OVERWRITE /**/" >>confdefs.h
 
 
 fi
