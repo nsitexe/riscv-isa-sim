@@ -30,4 +30,25 @@ VI_GENERAL_LOOP_BASE
 
     ++pos;
   }
-VI_LOOP_END;
+VI_LOOP_END
+#ifdef RISCV_ENABLE_VECTOR_TAIL_AGNOSTIC_OVERWRITE
+if (vta) {
+  VI_AGNOSTIC_PARAM
+  reg_t loop_max = (vl == 0) ? 0 : vlmax;
+  for (reg_t i=pos; i<loop_max; ++i){
+    if (sew == e8){
+      VAGN_PARAMS(e8);
+      vd = -1;
+    }else if(sew == e16){
+      VAGN_PARAMS(e16);
+      vd = -1;
+    }else if(sew == e32){
+      VAGN_PARAMS(e32);
+      vd = -1;
+    }else if(sew == e64){
+      VAGN_PARAMS(e64);
+      vd = -1;
+    }
+  }
+}
+#endif

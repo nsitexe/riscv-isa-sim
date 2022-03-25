@@ -50,4 +50,5 @@ for (reg_t i = 0; i < vl; ++i) {
     cnt++;
   }
 }
-
+reg_t vta = P.VU.vta;
+if (vta) VI_TAIL_AGNOSTIC_OVERWRITE

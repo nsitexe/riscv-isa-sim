@@ -24,6 +24,9 @@ if (vl > 0 && P.VU.vstart->read() < vl) {
   }
 
   vl = 0;
+
+  reg_t vta = P.VU.vta;
+  if (vta) VI_TAIL_AGNOSTIC_OVERWRITE_REDUCTION
 }
 
 P.VU.vstart->write(0);

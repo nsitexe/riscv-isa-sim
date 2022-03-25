@@ -29,3 +29,5 @@ for (reg_t i = P.VU.vstart->read() ; i < P.VU.vl->read(); ++i) {
 }
 
 P.VU.vstart->write(0);
+reg_t vta = P.VU.vta;
+if (vta) VI_TAIL_AGNOSTIC_OVERWRITE
