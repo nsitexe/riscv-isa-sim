@@ -722,6 +722,7 @@ enable_misaligned
 enable_dual_endian
 enable_vector_mask_agnostic_overwrite
 enable_vector_tail_agnostic_overwrite
+enable_vector_reset_vr_to_all_ones
 '
       ac_precious_vars='build_alias
 host_alias
@@ -1376,6 +1377,8 @@ Optional Features:
                           Enable vector mask agnostic overwriting
   --enable-vector-tail-agnostic-overwrite
                           Enable vector tail agnostic overwriting
+  --enable-vector-reset-vr-to-all-ones
+                          Reset vector register to all ones
 
 Optional Packages:
   --with-PACKAGE[=ARG]    use PACKAGE [ARG=yes]
@@ -6147,6 +6150,19 @@ if test "x$enable_vector_tail_agnostic_overwrite" = "xyes"; then :
 
 
 $as_echo "#define RISCV_ENABLE_VECTOR_TAIL_AGNOSTIC_OVERWRITE /**/" >>confdefs.h
+
+
+fi
+
+# Check whether --enable-vector-reset-vr-to-all-ones was given.
+if test "${enable_vector_reset_vr_to_all_ones+set}" = set; then :
+  enableval=$enable_vector_reset_vr_to_all_ones;
+fi
+
+if test "x$enable_vector_reset_vr_to_all_ones" = "xyes"; then :
+
+
+$as_echo "#define RISCV_VECTOR_RESET_VR_TO_ALL_ONES /**/" >>confdefs.h
 
 
 fi
