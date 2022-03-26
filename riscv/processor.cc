@@ -411,7 +411,11 @@ void processor_t::vectorUnit_t::reset()
   VLEN = get_vlen();
   ELEN = get_elen();
   reg_file = malloc(NVPR * vlenb);
+#ifdef RISCV_VECTOR_RESET_VR_TO_ALL_ONES
+  memset(reg_file, -1, NVPR * vlenb);
+#else
   memset(reg_file, 0, NVPR * vlenb);
+#endif
 
   auto& csrmap = p->get_state()->csrmap;
   csrmap[CSR_VXSAT] = vxsat = std::make_shared<vxsat_csr_t>(p, CSR_VXSAT);

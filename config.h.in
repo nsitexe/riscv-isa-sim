@@ -120,6 +120,9 @@
 /* Enable vector tail agnostic overwriting */
 #undef RISCV_ENABLE_VECTOR_TAIL_AGNOSTIC_OVERWRITE
 
+/* Reset vector register to all ones */
+#undef RISCV_VECTOR_RESET_VR_TO_ALL_ONES
+
 /* Define if subproject MCPPBS_SPROJ_NORM is enabled */
 #undef SOFTFLOAT_ENABLED
 
