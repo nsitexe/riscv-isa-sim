@@ -3,8 +3,10 @@ VI_CHECK_SLIDE(true);
 
 const reg_t offset = insn.v_zimm5();
 VI_LOOP_BASE
-if (P.VU.vstart->read() < offset && i < offset)
+if (P.VU.vstart->read() < offset && i < offset) {
+  VI_XI_SLIDEUP_PARAMS(e32, 0);
   continue;
+}
 
 switch (sew) {
 case e8: {
