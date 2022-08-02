@@ -262,14 +262,16 @@ public:
   inline void yield_load_reservation()
   {
     load_reservation_address = (reg_t)-1;
+    load_reservation_size = (size_t)-1;
   }
 
-  inline void acquire_load_reservation(reg_t vaddr)
+  inline void acquire_load_reservation(reg_t vaddr, size_t size)
   {
     reg_t paddr = translate(vaddr, 1, LOAD, 0);
-    if (auto host_addr = sim->addr_to_mem(paddr))
+    if (auto host_addr = sim->addr_to_mem(paddr)) {
       load_reservation_address = refill_tlb(vaddr, paddr, host_addr, LOAD).target_offset + vaddr;
-    else
+      load_reservation_size = size;
+    } else
       throw trap_load_access_fault((proc) ? proc->state.v : false, vaddr, 0, 0); // disallow LR to I/O space
   }
 
@@ -300,7 +302,8 @@ public:
 
     reg_t paddr = translate(vaddr, 1, STORE, 0);
     if (auto host_addr = sim->addr_to_mem(paddr))
-      return load_reservation_address == refill_tlb(vaddr, paddr, host_addr, STORE).target_offset + vaddr;
+      return ((load_reservation_address == refill_tlb(vaddr, paddr, host_addr, STORE).target_offset + vaddr) &&
+              (load_reservation_size == size));
     else
       throw trap_store_access_fault((proc) ? proc->state.v : false, vaddr, 0, 0); // disallow SC to I/O space
   }
@@ -416,6 +419,7 @@ private:
   processor_t* proc;
   memtracer_list_t tracer;
   reg_t load_reservation_address;
+  size_t load_reservation_size;
   uint16_t fetch_temp;
   uint64_t blocksz;
 
