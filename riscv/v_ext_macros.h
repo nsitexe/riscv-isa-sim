@@ -243,6 +243,7 @@ static inline bool is_aligned(const unsigned val, const unsigned pos)
   if (vl > 0) { \
     vd_0_des = vd_0_res; \
   } \
+  } \
   P.VU.vstart->write(0);
 
 #define VI_LOOP_CARRY_BASE \
@@ -788,6 +789,7 @@ static inline bool is_aligned(const unsigned val, const unsigned pos)
 #define VI_LOOP_REDUCTION_BASE(x) \
   require(x >= e8 && x <= e64); \
   reg_t vl = P.VU.vl->read(); \
+  if (vl > 0) { \
   reg_t rd_num = insn.rd(); \
   reg_t rs1_num = insn.rs1(); \
   reg_t rs2_num = insn.rs2(); \
@@ -821,6 +823,7 @@ static inline bool is_aligned(const unsigned val, const unsigned pos)
 #define VI_ULOOP_REDUCTION_BASE(x) \
   require(x >= e8 && x <= e64); \
   reg_t vl = P.VU.vl->read(); \
+  if (vl > 0) { \
   reg_t rd_num = insn.rd(); \
   reg_t rs1_num = insn.rs1(); \
   reg_t rs2_num = insn.rs2(); \
@@ -1217,6 +1220,7 @@ static inline bool is_aligned(const unsigned val, const unsigned pos)
 // wide reduction loop - signed
 #define VI_LOOP_WIDE_REDUCTION_BASE(sew1, sew2) \
   reg_t vl = P.VU.vl->read(); \
+  if (vl > 0) { \
   reg_t rd_num = insn.rd(); \
   reg_t rs1_num = insn.rs1(); \
   reg_t rs2_num = insn.rs2(); \
@@ -1247,6 +1251,7 @@ static inline bool is_aligned(const unsigned val, const unsigned pos)
 // wide reduction loop - unsigned
 #define VI_ULOOP_WIDE_REDUCTION_BASE(sew1, sew2) \
   reg_t vl = P.VU.vl->read(); \
+  if (vl > 0) { \
   reg_t rd_num = insn.rd(); \
   reg_t rs1_num = insn.rs1(); \
   reg_t rs2_num = insn.rs2(); \
