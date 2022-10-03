@@ -29,5 +29,7 @@ for (reg_t i = P.VU.vstart->read() ; i < P.VU.vl->read(); ++i) {
 }
 
 P.VU.vstart->write(0);
+reg_t vma = P.VU.vma;
 reg_t vta = P.VU.vta;
+if (vma) VI_MASK_AGNOSTIC_OVERWRITE
 if (vta) VI_TAIL_AGNOSTIC_OVERWRITE

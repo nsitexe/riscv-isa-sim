@@ -50,5 +50,7 @@ for (reg_t i = 0; i < vl; ++i) {
     cnt++;
   }
 }
+reg_t vma = P.VU.vma;
 reg_t vta = P.VU.vta;
+if (vma) VI_MASK_AGNOSTIC_OVERWRITE
 if (vta) VI_TAIL_AGNOSTIC_OVERWRITE
