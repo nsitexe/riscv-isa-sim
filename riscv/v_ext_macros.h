@@ -1472,7 +1472,7 @@ reg_t index[P.VU.vlmax]; \
   if (is_mask_ldst || vta) VI_LD_TAIL_AGNOSTIC_OVERWRITE(elt_width)
 
 #ifdef RISCV_ENABLE_VECTOR_MASK_AGNOSTIC_OVERWRITE
-#define VI_LD_INDEX_MASK_AGNOSTIC_OVERWRITE(elt_width) \
+#define VI_LD_INDEX_MASK_AGNOSTIC_OVERWRITE \
   { \
   VI_AGNOSTIC_PARAM \
   for (reg_t i=0; i < vl; ++i) { \
@@ -1497,11 +1497,11 @@ reg_t index[P.VU.vlmax]; \
   } \
   }
 #else
-#define VI_LD_INDEX_MASK_AGNOSTIC_OVERWRITE(elt_width) {}
+#define VI_LD_INDEX_MASK_AGNOSTIC_OVERWRITE {}
 #endif
 
 #ifdef RISCV_ENABLE_VECTOR_TAIL_AGNOSTIC_OVERWRITE
-#define VI_LD_INDEX_TAIL_AGNOSTIC_OVERWRITE(elt_width) \
+#define VI_LD_INDEX_TAIL_AGNOSTIC_OVERWRITE \
   { \
   VI_AGNOSTIC_PARAM \
   reg_t loop_max = (vl == 0) ? 0 : vlmax; \
@@ -1526,7 +1526,7 @@ reg_t index[P.VU.vlmax]; \
   } \
   }
 #else
-#define VI_LD_INDEX_TAIL_AGNOSTIC_OVERWRITE(elt_width) {}
+#define VI_LD_INDEX_TAIL_AGNOSTIC_OVERWRITE {}
 #endif
 
 #define VI_LD_INDEX(elt_width, is_seg) \
@@ -1566,8 +1566,8 @@ reg_t index[P.VU.vlmax]; \
   P.VU.vstart->write(0); \
   reg_t vma = P.VU.vma; \
   reg_t vta = P.VU.vta; \
-  if (vma) VI_LD_INDEX_MASK_AGNOSTIC_OVERWRITE(elt_width) \
-  if (vta) VI_LD_INDEX_TAIL_AGNOSTIC_OVERWRITE(elt_width)
+  if (vma) VI_LD_INDEX_MASK_AGNOSTIC_OVERWRITE \
+  if (vta) VI_LD_INDEX_TAIL_AGNOSTIC_OVERWRITE
 
 #define VI_ST(stride, offset, elt_width, is_mask_ldst) \
   const reg_t nf = insn.v_nf() + 1; \
