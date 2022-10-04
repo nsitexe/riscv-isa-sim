@@ -1431,7 +1431,8 @@ reg_t index[P.VU.vlmax]; \
 #define VI_LD_TAIL_AGNOSTIC_OVERWRITE(elt_width) \
   { \
   VI_AGNOSTIC_PARAM \
-  reg_t loop_max = (vl == 0) ? 0 : vlmax; \
+  const reg_t elt_per_reg = P.VU.vlenb / sizeof(elt_width ## _t); \
+  reg_t loop_max = (vl == 0) ? 0 : emul * elt_per_reg; \
   for (reg_t i=vl; i<loop_max; ++i) { \
     VI_STRIP(i); \
     for (reg_t fn = 0; fn < nf; ++fn) { \
