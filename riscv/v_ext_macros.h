@@ -271,6 +271,7 @@ static inline bool is_aligned(const unsigned val, const unsigned pos)
   require_vector(true); \
   reg_t vl = P.VU.vl->read(); \
   reg_t sew = P.VU.vsew; \
+  reg_t vma = P.VU.vma; \
   reg_t rd_num = insn.rd(); \
   reg_t rs1_num = insn.rs1(); \
   reg_t rs2_num = insn.rs2(); \
@@ -329,6 +330,18 @@ static inline bool is_aligned(const unsigned val, const unsigned pos)
   for (reg_t i=1; i<loop_max; ++i) {
 
 #define VI_LOOP_SIMPLE_END \
+  }
+
+#define VI_LOOP_MASK_MASK_AGNOSTIC_BASE \
+  VI_AGNOSTIC_PARAM \
+  for (reg_t i = P.VU.vstart->read(); i < vl; ++i) { \
+    VI_LOOP_ACTIVE_ELEMENT_SKIP(); \
+    const uint64_t mmask = UINT64_C(1) << mpos; \
+    uint128_t res = -1; \
+    auto &vd = P.VU.elt<uint64_t>(rd_num, midx, true);
+
+#define VI_LOOP_MASK_MASK_AGNOSTIC_END \
+    vd = (vd & ~mmask) | (((res) << mpos) & mmask); \
   }
 
 #define VI_LOOP_MASK_TAIL_AGNOSTIC_BASE \
@@ -559,9 +572,16 @@ static inline bool is_aligned(const unsigned val, const unsigned pos)
   VI_LOOP_SIMPLE_END \
   }
 
+#define VI_MASK_MASK_AGNOSTIC_OVERWRITE \
+  { \
+  VI_LOOP_MASK_MASK_AGNOSTIC_BASE \
+  VI_LOOP_MASK_MASK_AGNOSTIC_END \
+  }
+
 #else
 #define VI_MASK_AGNOSTIC_OVERWRITE {}
 #define VI_MASK_AGNOSTIC_OVERWRITE_WIDEN {}
+#define VI_MASK_MASK_AGNOSTIC_OVERWRITE {}
 #endif
 
 #ifdef RISCV_ENABLE_VECTOR_TAIL_AGNOSTIC_OVERWRITE
@@ -672,31 +692,37 @@ static inline bool is_aligned(const unsigned val, const unsigned pos)
 #define VI_VV_LOOP_CMP(BODY) \
   VI_CHECK_MSS(true); \
   VI_LOOP_CMP_BODY(VV_CMP_PARAMS, BODY) \
+  if (vma) VI_MASK_MASK_AGNOSTIC_OVERWRITE \
   VI_MASK_TAIL_AGNOSTIC_OVERWRITE
 
 #define VI_VX_LOOP_CMP(BODY) \
   VI_CHECK_MSS(false); \
   VI_LOOP_CMP_BODY(VX_CMP_PARAMS, BODY) \
+  if (vma) VI_MASK_MASK_AGNOSTIC_OVERWRITE \
   VI_MASK_TAIL_AGNOSTIC_OVERWRITE
 
 #define VI_VI_LOOP_CMP(BODY) \
   VI_CHECK_MSS(false); \
   VI_LOOP_CMP_BODY(VI_CMP_PARAMS, BODY) \
+  if (vma) VI_MASK_MASK_AGNOSTIC_OVERWRITE \
   VI_MASK_TAIL_AGNOSTIC_OVERWRITE
 
 #define VI_VV_ULOOP_CMP(BODY) \
   VI_CHECK_MSS(true); \
   VI_LOOP_CMP_BODY(VV_UCMP_PARAMS, BODY) \
+  if (vma) VI_MASK_MASK_AGNOSTIC_OVERWRITE \
   VI_MASK_TAIL_AGNOSTIC_OVERWRITE
 
 #define VI_VX_ULOOP_CMP(BODY) \
   VI_CHECK_MSS(false); \
   VI_LOOP_CMP_BODY(VX_UCMP_PARAMS, BODY) \
+  if (vma) VI_MASK_MASK_AGNOSTIC_OVERWRITE \
   VI_MASK_TAIL_AGNOSTIC_OVERWRITE
 
 #define VI_VI_ULOOP_CMP(BODY) \
   VI_CHECK_MSS(false); \
   VI_LOOP_CMP_BODY(VI_UCMP_PARAMS, BODY) \
+  if (vma) VI_MASK_MASK_AGNOSTIC_OVERWRITE \
   VI_MASK_TAIL_AGNOSTIC_OVERWRITE
 
 // merge and copy loop
@@ -2221,6 +2247,7 @@ reg_t index[P.VU.vlmax]; \
       break; \
   }; \
   VI_VFP_LOOP_CMP_END \
+  if (vma) VI_MASK_MASK_AGNOSTIC_OVERWRITE \
   VI_MASK_TAIL_AGNOSTIC_OVERWRITE
 
 #define VI_VFP_VF_LOOP_CMP(BODY16, BODY32, BODY64) \
@@ -2250,6 +2277,7 @@ reg_t index[P.VU.vlmax]; \
       break; \
   }; \
   VI_VFP_LOOP_CMP_END \
+  if (vma) VI_MASK_MASK_AGNOSTIC_OVERWRITE \
   VI_MASK_TAIL_AGNOSTIC_OVERWRITE
 
 #define VI_VFP_VF_LOOP_WIDE(BODY16, BODY32) \
