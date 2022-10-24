@@ -6,6 +6,7 @@ require_vm;
 require(insn.rd() != insn.rs2());
 
 reg_t vl = P.VU.vl->read();
+reg_t vma = P.VU.vma;
 reg_t rd_num = insn.rd();
 reg_t rs2_num = insn.rs2();
 
@@ -28,4 +29,5 @@ for (reg_t i = P.VU.vstart->read() ; i < vl; ++i) {
     vd = (vd & ~mmask) | ((res << mpos) & mmask);
   }
 }
+if (vma) VI_MASK_MASK_AGNOSTIC_OVERWRITE
 VI_MASK_TAIL_AGNOSTIC_OVERWRITE
